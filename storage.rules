@@ -1,0 +1,10 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isOwner() { return request.auth.uid == 'OWNER_UID'; }
+    match /attachments/{id}/{fileName} {
+      allow read: if true;
+      allow write, delete: if isOwner();
+    }
+  }
+}

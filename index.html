@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="km">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>ប្រព័ន្ធ​កំណត់​ហេតុ HOTLINE 117</title>
+
+  <!-- Khmer Battambang font (Google Fonts "Battambang") -->
+  <link href="https://fonts.googleapis.com/css2?family=Battambang:wght@300;400;700&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="css/styles.css">
+
+  <!-- Firebase compat SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
+
+  <!-- Export libs -->
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+  <div class="page">
+    <header class="header">
+      <!-- Logo: local path (replace with assets/logo.png after upload) -->
+      <img id="logoImg" src="/mnt/data/A_digital_graphic_of_a_hotline_login_web_page_show.png" alt="HOTLINE 117" class="logo">
+      <h1>HOTLINE 117 — ប្រព័ន្ធកំណត់ហេតុ</h1>
+      <div id="userArea" class="user-area"></div>
+    </header>
+
+    <!-- LOGIN (only) -->
+    <main class="card" id="loginCard">
+      <h2>ចូលប្រើប្រាស់</h2>
+
+      <label class="label">អ៊ីមែល</label>
+      <input id="email" type="email" placeholder="អ៊ីមែល" class="input">
+
+      <label class="label">លេខសម្ងាត់</label>
+      <input id="password" type="password" placeholder="លេខសម្ងាត់" class="input">
+
+      <div class="actions">
+        <button id="btnLogin" class="btn btn-primary">ចូល</button>
+        <button id="btnForgot" class="btn btn-link">ភ្លេចលេខសំងាត់?</button>
+      </div>
+
+      <p class="note">**សម្គាល់**: គ្មានប៊ូតុងចុះឈ្មោះ — សូមធ្វើការបង្កើតគណនីដោយអ្នកគ្រប់គ្រងតាម Firebase Console។</p>
+    </main>
+
+    <!-- APP (hidden until logged in) -->
+    <section id="appArea" style="display:none;">
+      <div class="card">
+        <div class="top-row">
+          <div>
+            <input id="searchInput" class="input search" placeholder="ស្វែងរក... (ប្រភព, លេខទំនាក់, សេចក្តីសង្ខេប)">
+            <select id="filterStatus" class="select">
+              <option value="all">ស្ថានភាព​ទាំងអស់</option>
+              <option value="open">Open</option>
+              <option value="done">Done</option>
+            </select>
+            <select id="filterPeriod" class="select">
+              <option value="all">រាល់ពេល</option>
+              <option value="7d">សប្ដាហ៍​ចុងក្រោយ</option>
+              <option value="30d">ខែ​ចុងក្រោយ</option>
+              <option value="365d">ឆ្នាំ​ចុងក្រោយ</option>
+            </select>
+          </div>
+          <div class="right-actions">
+            <button id="btnSummary" class="btn btn-muted">សេចក្ដីសង្ខេប</button>
+            <button id="btnExportXlsx" class="btn btn-muted">Export XLSX</button>
+            <button id="btnSignOut" class="btn btn-danger">ចាកចេញ</button>
+          </div>
+        </div>
+
+        <hr />
+
+        <!-- Form to submit report -->
+        <div class="form-grid">
+          <label>កាលបរិច្ឆេទ</label>
+          <input id="date" type="date" class="input">
+          <label>ប្រភពផ្ដល់ព័ត៌មាន</label>
+          <input id="source" type="text" class="input" placeholder="ឈ្មោះ / ស្ថាប័ន">
+          <label>លេខទំនាក់ទំនង</label>
+          <input id="phone" type="text" class="input" placeholder="លេខទូរស័ព្ទ">
+          <label>អំពីរឿងហេតុ</label>
+          <textarea id="incident" class="textarea" placeholder="សង្ខេបអំពីរឿង..."></textarea>
+          <label>នីតិវិធីដោះស្រាយ</label>
+          <textarea id="procedure" class="textarea" placeholder="បានធ្វើអ្វីទៅខ្លះ"></textarea>
+          <label>បរិយាយ</label>
+          <textarea id="description" class="textarea" placeholder="ព័ត៌មានលម្អិត"></textarea>
+          <label>ឯកសារភ្ជាប់ (បច្ចុប្បន្ន)</label>
+          <input id="fileInput" type="file" class="input">
+        </div>
+
+        <div class="actions">
+          <button id="btnClear" class="btn btn-muted">សម្អាត</button>
+          <button id="btnSubmit" class="btn btn-primary">បញ្ជូន</button>
+        </div>
+      </div>
+
+      <!-- Records table -->
+      <div class="card">
+        <h3>កំណត់ហេតុ</h3>
+        <table id="recordsTable" class="table">
+          <thead>
+            <tr>
+              <th><input id="selectAll" type="checkbox" /></th>
+              <th>កាលបរិច្ឆេទ</th>
+              <th>ប្រភព</th>
+              <th>ទំនាក់ទំនង</th>
+              <th>សេចក្តីសង្ខេប</th>
+              <th>Uploaded by</th>
+              <th>ស្ថានភាព</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+
+        <div class="actions">
+          <button id="btnExportPdf" class="btn btn-muted">Export Selected PDF</button>
+          <button id="btnDeleteSelected" class="btn btn-danger">Delete Selected</button>
+        </div>
+      </div>
+
+      <div class="card" id="summaryCard" style="display:none">
+        <h3>សេចក្ដីសង្ខេប</h3>
+        <div class="summary-grid">
+          <div>សប្ដាហ៍: <span id="weekCount">0</span></div>
+          <div>ខែ: <span id="monthCount">0</span></div>
+          <div>ឆ្នាំ: <span id="yearCount">0</span></div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- Config + App scripts -->
+  <script src="js/firebase-config.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

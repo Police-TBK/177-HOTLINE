@@ -1,0 +1,324 @@
+// js/app.js — Full app logic (Khmer)
+(function(){
+  // helpers
+  const $ = id => document.getElementById(id);
+  const escapeHtml = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const shorten = (s,n)=> s && s.length>n ? s.slice(0,n-1) + '…' : (s||'');
+  const debounce = (fn,ms)=>{ let t; return (...a)=>{ clearTimeout(t); t = setTimeout(()=>fn(...a), ms); }; };
+
+  // Auth UI
+  const emailEl = $('email'), passEl = $('password'), btnLogin = $('btnLogin'), btnForgot = $('btnForgot'), btnSignOut = $('btnSignOut');
+  const userArea = $('userArea');
+  const loginCard = $('loginCard');
+
+  // App UI
+  const appArea = $('appArea');
+  const dateEl = $('date'), sourceEl = $('source'), phoneEl = $('phone'), incidentEl = $('incident'), procedureEl = $('procedure'), descriptionEl = $('description'), fileInput = $('fileInput');
+  const btnSubmit = $('btnSubmit'), btnClear = $('btnClear'), btnExportXlsx = $('btnExportXlsx'), btnExportPdf = $('btnExportPdf');
+  const recordsTableBody = document.querySelector('#recordsTable tbody');
+  const searchInput = $('searchInput'), filterStatus = $('filterStatus'), filterPeriod = $('filterPeriod');
+  const btnSummary = $('btnSummary'), summaryCard = $('summaryCard');
+  const weekCount = $('weekCount'), monthCount = $('monthCount'), yearCount = $('yearCount');
+  const selectAll = $('selectAll'), btnDeleteSelected = $('btnDeleteSelected');
+
+  let currentUser = null;
+
+  // ---------- AUTH: login only (no signup) ----------
+  btnLogin.addEventListener('click', async ()=>{
+    const email = emailEl.value.trim(), pass = passEl.value;
+    if(!email || !pass) return alert('សូមបំពេញអ៊ីមែល និង លេខសម្ងាត់');
+    try{
+      await auth.signInWithEmailAndPassword(email, pass);
+    } catch(e){
+      alert('ចូលមិនបាន: ' + e.message);
+    }
+  });
+
+  btnForgot.addEventListener('click', async ()=>{
+    const email = prompt('បញ្ចូលអ៊ីមែលរបស់អ្នកសម្រាប់ Reset password:');
+    if(!email) return;
+    try{
+      await auth.sendPasswordResetEmail(email);
+      alert('ផ្ញើអ៊ីមែលសម្រាប់កំណត់ពាក្យសម្ងាត់ម្តងទៀត');
+    } catch(e){ alert('Failed: ' + e.message); }
+  });
+
+  btnSignOut.addEventListener('click', ()=> auth.signOut());
+
+  // ---------- AUTH STATE ----------
+  auth.onAuthStateChanged(user=>{
+    currentUser = user;
+    if(user){
+      // show app
+      loginCard.style.display = 'none';
+      appArea.style.display = 'block';
+      $('userArea').textContent = `សូស្ដី, ${user.displayName || user.email}`;
+      loadRecords();
+    } else {
+      loginCard.style.display = 'block';
+      appArea.style.display = 'none';
+      $('userArea').textContent = '';
+    }
+  });
+
+  // ---------- SUBMIT REPORT ----------
+  $('btnSubmit').addEventListener('click', async ()=>{
+    if(!currentUser) return alert('សូមចូលមុន');
+    const date = dateEl.value;
+    if(!date) return alert('សូមបំពេញកាលបរិច្ឆេទ');
+    const data = {
+      date,
+      source: sourceEl.value || '',
+      phone: phoneEl.value || '',
+      incident: incidentEl.value || '',
+      procedure: procedureEl.value || '',
+      description: descriptionEl.value || '',
+      status: 'open',
+      uid: currentUser.uid,
+      uploadedBy: currentUser.displayName || currentUser.email || '',
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    };
+    // create doc id
+    const id = 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2,8);
+
+    // handle file upload if present (with metadata)
+    if(fileInput.files.length){
+      const f = fileInput.files[0];
+      const storagePath = `attachments/${id}/${f.name}`;
+      const ref = storage.ref().child(storagePath);
+      try{
+        const snap = await ref.put(f, { customMetadata: { uploadedByUid: currentUser.uid, docId: id } });
+        const url = await snap.ref.getDownloadURL();
+        data.fileUrl = url; data.fileName = f.name; data.storagePath = storagePath;
+      } catch(e){
+        console.error('upload fail', e);
+        alert('Upload file failed: ' + e.message);
+        return;
+      }
+    }
+
+    await db.collection('hotline117').doc(id).set(data);
+    alert('រក្សារួចរាល់');
+    clearForm();
+    loadRecords();
+  });
+
+  $('btnClear').addEventListener('click', clearForm);
+  function clearForm(){
+    ['date','source','phone','incident','procedure','description'].forEach(k => { const el = $(k); if(el) el.value = ''; });
+    if(fileInput) fileInput.value = '';
+  }
+
+  // ---------- LOAD / FILTER RECORDS ----------
+  async function loadRecords(){
+    recordsTableBody.innerHTML = '';
+    const snapshot = await db.collection('hotline117').orderBy('date','desc').get();
+    snapshot.forEach(doc=>{
+      const d = doc.data();
+      const tr = document.createElement('tr');
+      if(d.status === 'done') tr.classList.add('done');
+      tr.innerHTML = `
+        <td><input type="checkbox" class="sel" data-id="${doc.id}" /></td>
+        <td>${escapeHtml(d.date||'')}</td>
+        <td>${escapeHtml(d.source||'')}</td>
+        <td>${escapeHtml(d.phone||'')}</td>
+        <td>${shorten(escapeHtml(d.incident||''), 80)}</td>
+        <td>${escapeHtml(d.uploadedBy||'')}</td>
+        <td>${d.status||'open'}</td>
+        <td>
+          <button class="btn btn-sm btn-muted" data-id="${doc.id}" data-action="view">លម្អិត</button>
+          <button class="btn btn-sm btn-primary" data-id="${doc.id}" data-action="pdf">PDF</button>
+          <button class="btn btn-sm btn-muted" data-id="${doc.id}" data-action="download" ${!d.fileUrl ? 'disabled' : ''}>ទាញយក</button>
+          <button class="btn btn-sm btn-primary" data-id="${doc.id}" data-action="edit">កែ</button>
+          <button class="btn btn-sm btn-danger" data-id="${doc.id}" data-action="delete">លុប</button>
+        </td>
+      `;
+      recordsTableBody.appendChild(tr);
+    });
+  }
+
+  // ---------- TABLE ACTIONS ----------
+  document.querySelector('#recordsTable').addEventListener('click', async (e)=>{
+    const btn = e.target.closest('button');
+    if(!btn) return;
+    const id = btn.dataset.id, action = btn.dataset.action;
+    if(action === 'view'){
+      const doc = await db.collection('hotline117').doc(id).get();
+      if(!doc.exists) return alert('រកមិនឃើញ');
+      const d = doc.data();
+      alert(`Date: ${d.date}\nSource: ${d.source}\nPhone: ${d.phone}\n\n${d.incident}\n\n${d.description}`);
+    } else if(action === 'pdf'){
+      await generatePdfForId(id);
+    } else if(action === 'download'){
+      const d = (await db.collection('hotline117').doc(id).get()).data();
+      if(d.fileUrl) window.open(d.fileUrl, '_blank');
+    } else if(action === 'edit'){
+      await startEdit(id);
+    } else if(action === 'delete'){
+      if(!confirm('តើអ្នកចង់លុបមែនទេ?')) return;
+      await tryDelete(id);
+    }
+  });
+
+  // ---------- EDIT (client-side flow) ----------
+  async function startEdit(id){
+    const docRef = db.collection('hotline117').doc(id);
+    const doc = await docRef.get();
+    if(!doc.exists) return alert('Not found');
+    const d = doc.data();
+
+    // permission check (client-side) — rules enforced server-side
+    const ok = await canModify(doc);
+    if(!ok) return alert('មិនអាចកែបាន (ការ​ពេលឬសិទ្ធិ)');
+
+    // populate form
+    dateEl.value = d.date || '';
+    sourceEl.value = d.source || '';
+    phoneEl.value = d.phone || '';
+    incidentEl.value = d.incident || '';
+    procedureEl.value = d.procedure || '';
+    descriptionEl.value = d.description || '';
+
+    if(!confirm('ចុច OK ដើម្បីរក្សាការ​កែប្រែ')) return;
+    const updates = {
+      date: dateEl.value, source: sourceEl.value, phone: phoneEl.value,
+      incident: incidentEl.value, procedure: procedureEl.value, description: descriptionEl.value,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    };
+    await docRef.update(updates);
+    alert('បានកែប្រែ');
+    clearForm();
+    loadRecords();
+  }
+
+  // ---------- DELETE ----------
+  async function tryDelete(id){
+    const docRef = db.collection('hotline117').doc(id);
+    const doc = await docRef.get();
+    if(!doc.exists) return alert('Not found');
+    const ok = await canModify(doc);
+    if(!ok) return alert('មិនអាចលុប (ក្រៅរយៈ 2 ថ្ងៃ និងមិនមែន OWNER)');
+    const d = doc.data();
+    if(d.storagePath){
+      try{ await storage.ref().child(d.storagePath).delete(); } catch(e){ console.warn('delete file fail', e); }
+    }
+    await docRef.delete();
+    alert('បានលុប');
+    loadRecords();
+  }
+
+  // ---------- CAN MODIFY (client check) ----------
+  async function canModify(doc){
+    const d = doc.data();
+    const uid = currentUser.uid;
+    if(uid === OWNER_UID) return true;
+    if(uid !== d.uid) return false;
+    const createdAt = d.createdAt ? (d.createdAt.toDate ? d.createdAt.toDate() : new Date(d.createdAt)) : null;
+    if(!createdAt) return false;
+    return (Date.now() - createdAt.getTime()) <= 2*24*3600*1000;
+  }
+
+  // ---------- EXPORTS ----------
+  $('btnExportXlsx').addEventListener('click', async ()=>{
+    const snapshot = await db.collection('hotline117').orderBy('date','desc').get();
+    const rows = [['ID','Date','Source','Phone','Incident','Procedure','Description','Status','UploadedBy','FileName','FileUrl']];
+    snapshot.forEach(doc => {
+      const d = doc.data();
+      rows.push([doc.id, d.date, d.source, d.phone, d.incident, d.procedure, d.description, d.status, d.uploadedBy||'', d.fileName||'', d.fileUrl||'']);
+    });
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'hotline');
+    const wbout = XLSX.write(wb, {bookType:'xlsx', type:'array'});
+    const blob = new Blob([wbout], {type:'application/octet-stream'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'hotline117_records.xlsx'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  });
+
+  // PDF generator (simple)
+  async function generatePdfForId(id){
+    const docSnap = await db.collection('hotline117').doc(id).get();
+    if(!docSnap.exists) return;
+    const d = docSnap.data();
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ unit:'pt', format:'a4' });
+    let y = 40;
+    pdf.setFontSize(14); pdf.text('កំណត់ហេតុ HOTLINE 117', 40, y); y+=24;
+    pdf.setFontSize(11);
+    pdf.text('ID: ' + id, 40, y); y+=16;
+    pdf.text('Date: ' + (d.date||''), 40, y); y+=14;
+    pdf.text('Source: ' + (d.source||''), 40, y); y+=14;
+    pdf.text('Phone: ' + (d.phone||''), 40, y); y+=18;
+    pdf.text('Incident:', 40, y); y+=12;
+    const lines = pdf.splitTextToSize(d.incident||'', 500);
+    pdf.text(lines, 40, y); y += lines.length*12 + 8;
+    pdf.text('Procedure:', 40, y); y+=12;
+    const lines2 = pdf.splitTextToSize(d.procedure||'', 500);
+    pdf.text(lines2, 40, y); y += lines2.length*12 + 8;
+    pdf.text('Description:', 40, y); y+=12;
+    const lines3 = pdf.splitTextToSize(d.description||'', 500);
+    pdf.text(lines3, 40, y); y += lines3.length*12 + 8;
+    pdf.save('hotline_' + id + '.pdf');
+  }
+
+  // ---------- SEARCH / FILTER ----------
+  searchInput.addEventListener('input', debounce(applyFilters, 300));
+  filterStatus.addEventListener('change', applyFilters);
+  filterPeriod.addEventListener('change', applyFilters);
+
+  async function applyFilters(){
+    const q = (searchInput.value || '').toLowerCase();
+    const status = filterStatus.value;
+    const period = filterPeriod.value;
+    recordsTableBody.innerHTML = '';
+    const snapshot = await db.collection('hotline117').orderBy('date','desc').get();
+    snapshot.forEach(doc=>{
+      const d = doc.data();
+      const text = [d.source,d.phone,d.incident,d.description,d.uploadedBy].filter(Boolean).join(' ').toLowerCase();
+      const matchesQ = q ? text.includes(q) : true;
+      const matchesStatus = status==='all' ? true : (d.status === status);
+      let matchesPeriod = true;
+      if(period!=='all'){
+        const days = period==='7d'?7: period==='30d'?30:365;
+        const recDate = new Date(d.date);
+        const cutoff = Date.now() - days*24*3600*1000;
+        matchesPeriod = recDate.getTime() >= cutoff;
+      }
+      if(matchesQ && matchesStatus && matchesPeriod){
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td><input type="checkbox" class="sel" data-id="${doc.id}" /></td>
+          <td>${d.date||''}</td>
+          <td>${escapeHtml(d.source||'')}</td>
+          <td>${escapeHtml(d.phone||'')}</td>
+          <td>${shorten(escapeHtml(d.incident||''),80)}</td>
+          <td>${escapeHtml(d.uploadedBy||'')}</td>
+          <td>${d.status||'open'}</td>
+          <td>
+            <button class="btn btn-sm btn-muted" data-id="${doc.id}" data-action="view">លម្អិត</button>
+            <button class="btn btn-sm btn-primary" data-id="${doc.id}" data-action="pdf">PDF</button>
+            <button class="btn btn-sm btn-muted" data-id="${doc.id}" data-action="download" ${!d.fileUrl ? 'disabled' : ''}>ទាញយក</button>
+            <button class="btn btn-sm btn-primary" data-id="${doc.id}" data-action="edit">កែ</button>
+            <button class="btn btn-sm btn-danger" data-id="${doc.id}" data-action="delete">លុប</button>
+          </td>`;
+        recordsTableBody.appendChild(tr);
+      }
+    });
+  }
+
+  // ---------- SUMMARY ----------
+  btnSummary.addEventListener('click', async ()=>{
+    const snapshot = await db.collection('hotline117').get();
+    const now = Date.now(); let w=0,m=0,y=0;
+    snapshot.forEach(doc => {
+      const d = doc.data();
+      const t = d.date ? new Date(d.date).getTime() : null;
+      if(!t) return;
+      if(t >= now - 7*24*3600*1000) w++;
+      if(t >= now - 30*24*3600*1000) m++;
+      if(t >= now - 365*24*3600*1000) y++;
+    });
+    weekCount.textContent = w; monthCount.textContent = m; yearCount.textContent = y;
+    summaryCard.style.display = 'block';
+  });
+
+})();
