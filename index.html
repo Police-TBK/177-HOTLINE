@@ -4,36 +4,37 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>ប្រព័ន្ធ​កំណត់​ហេតុ HOTLINE 117</title>
-  <div style="text-align:center; margin-bottom:20px;">
-    <img src="assets/logo.png" alt="Logo" style="height:80px;">
-</div>
 
-
-  <!-- Khmer Battambang font (Google Fonts "Battambang") -->
+  <!-- Khmer Battambang font -->
   <link href="https://fonts.googleapis.com/css2?family=Battambang:wght@300;400;700&display=swap" rel="stylesheet">
 
   <link rel="stylesheet" href="css/styles.css">
 
-  <!-- Firebase compat SDKs -->
+  <!-- Firebase compat SDKs (still needed for Firestore/Storage usage) -->
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
 
-  <!-- Export libs -->
+  <!-- libs for export -->
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+  <style>
+    /* quick inline to ensure the login card centered on initial load before CSS loads */
+    body { font-family: "Battambang", sans-serif; background:#f7f7f7; margin:0; padding:0; }
+  </style>
 </head>
 <body>
   <div class="page">
+
     <header class="header">
-      <!-- Logo: local path (replace with assets/logo.png after upload) -->
+      <!-- Logo - using uploaded local path (move file to assets/logo.png if you prefer) -->
       <img id="logoImg" src="/mnt/data/A_digital_graphic_of_a_hotline_login_web_page_show.png" alt="HOTLINE 117" class="logo">
       <h1>HOTLINE 117 — ប្រព័ន្ធកំណត់ហេតុ</h1>
       <div id="userArea" class="user-area"></div>
     </header>
 
-    <!-- LOGIN (only) -->
+    <!-- LOGIN CARD (built-in credentials) -->
     <main class="card" id="loginCard">
       <h2>ចូលប្រើប្រាស់</h2>
 
@@ -45,18 +46,20 @@
 
       <div class="actions">
         <button id="btnLogin" class="btn btn-primary">ចូល</button>
-        <button id="btnForgot" class="btn btn-link">ជំនួយ</button>
+        <button id="btnForgot" class="btn btn-link">ភ្លេចលេខសំងាត់?</button>
       </div>
 
-      <p class="note">ប្រសិនបើមានបញ្ហាឬចម្ងល់សូមទំនាក់ទំនងមកកាន់តេលេក្រាម 089-202-437</p>
+      <p class="note">**សម្គាល់**: គ្មានប៊ូតុងចុះឈ្មោះ — អ្នកគ្រប់គ្រងត្រូវប៉ាន់ទុកគណនីឬប្រើគណនីនេះ៖ <br>
+      អ៊ីមែល: <strong>hotline@tbk.com</strong>  លេខសម្ងាត់: <strong>TBK123*@</strong></p>
     </main>
 
-    <!-- APP (hidden until logged in) -->
+    <!-- MAIN APP (hidden until login) -->
     <section id="appArea" style="display:none;">
+      <!-- Top controls -->
       <div class="card">
         <div class="top-row">
           <div>
-            <input id="searchInput" class="input search" placeholder="ស្វែងរក... (ប្រភព, លេខទំនាក់, សេចក្តីសង្ខេប)">
+            <input id="searchInput" class="input search" placeholder="ស្វែងរក... (ប្រភព / លេខទំនាក់ទំនង / ព័ត៌មាន)">
             <select id="filterStatus" class="select">
               <option value="all">ស្ថានភាព​ទាំងអស់</option>
               <option value="open">Open</option>
@@ -75,25 +78,43 @@
             <button id="btnSignOut" class="btn btn-danger">ចាកចេញ</button>
           </div>
         </div>
+      </div>
 
-        <hr />
-
-        <!-- Form to submit report -->
+      <!-- Form to submit report -->
+      <div class="card">
+        <h3>បន្ថែមកំណត់ហេតុថ្មី</h3>
         <div class="form-grid">
-          <label>កាលបរិច្ឆេទ</label>
-          <input id="date" type="date" class="input">
-          <label>ប្រភពផ្ដល់ព័ត៌មាន</label>
-          <input id="source" type="text" class="input" placeholder="ឈ្មោះ / ស្ថាប័ន">
-          <label>លេខទំនាក់ទំនង</label>
-          <input id="phone" type="text" class="input" placeholder="លេខទូរស័ព្ទ">
-          <label>អំពីរឿងហេតុ</label>
-          <textarea id="incident" class="textarea" placeholder="សង្ខេបអំពីរឿង..."></textarea>
-          <label>នីតិវិធីដោះស្រាយ</label>
-          <textarea id="procedure" class="textarea" placeholder="បានធ្វើអ្វីទៅខ្លះ"></textarea>
-          <label>បរិយាយ</label>
-          <textarea id="description" class="textarea" placeholder="ព័ត៌មានលម្អិត"></textarea>
-          <label>ឯកសារភ្ជាប់ (បច្ចុប្បន្ន)</label>
-          <input id="fileInput" type="file" class="input">
+          <div>
+            <label class="label">កាលបរិច្ឆេទ</label>
+            <input id="date" type="date" class="input">
+          </div>
+          <div>
+            <label class="label">ប្រភពផ្ដល់ព័ត៌មាន</label>
+            <input id="source" type="text" class="input" placeholder="ឈ្មោះ/ស្ថាប័ន">
+          </div>
+
+          <div>
+            <label class="label">លេខទំនាក់ទំនង</label>
+            <input id="phone" type="text" class="input" placeholder="លេខទូរស័ព្ទ">
+          </div>
+          <div>
+            <label class="label">អំពីរឿងហេតុ</label>
+            <textarea id="incident" class="textarea" placeholder="សង្ខេបអំពីរឿង..."></textarea>
+          </div>
+
+          <div>
+            <label class="label">នីតិវិធីដោះស្រាយ</label>
+            <textarea id="procedure" class="textarea" placeholder="បានធ្វើអ្វីទៅខ្លះ"></textarea>
+          </div>
+          <div>
+            <label class="label">បរិយាយ</label>
+            <textarea id="description" class="textarea" placeholder="ព័ត៌មានលម្អិត"></textarea>
+          </div>
+
+          <div>
+            <label class="label">ឯកសារភ្ជាប់</label>
+            <input id="fileInput" type="file" class="input">
+          </div>
         </div>
 
         <div class="actions">
@@ -102,7 +123,7 @@
         </div>
       </div>
 
-      <!-- Records table -->
+      <!-- Records -->
       <div class="card">
         <h3>កំណត់ហេតុ</h3>
         <table id="recordsTable" class="table">
@@ -139,7 +160,7 @@
 
   </div>
 
-  <!-- Config + App scripts -->
+  <!-- Firebase config + App script -->
   <script src="js/firebase-config.js"></script>
   <script src="js/app.js"></script>
 </body>

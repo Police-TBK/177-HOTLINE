@@ -1,71 +1,87 @@
-// js/app.js — Full app logic (Khmer)
+// js/app.js
+// Full app logic with built-in login (no Firebase Auth).
 (function(){
-  // helpers
+  // CONFIG: built-in credentials
+  const BUILTIN_EMAIL = "hotline@tbk.com";
+  const BUILTIN_PASSWORD = "TBK123*@";
+  const BUILTIN_UID = "local-hotline-user"; // used for uid fields in documents
+
+  // DOM helpers
   const $ = id => document.getElementById(id);
   const escapeHtml = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   const shorten = (s,n)=> s && s.length>n ? s.slice(0,n-1) + '…' : (s||'');
   const debounce = (fn,ms)=>{ let t; return (...a)=>{ clearTimeout(t); t = setTimeout(()=>fn(...a), ms); }; };
 
-  // Auth UI
-  const emailEl = $('email'), passEl = $('password'), btnLogin = $('btnLogin'), btnForgot = $('btnForgot'), btnSignOut = $('btnSignOut');
-  const userArea = $('userArea');
-  const loginCard = $('loginCard');
-
-  // App UI
+  // Elements
+  const emailEl = $('email'), passEl = $('password'), btnLogin = $('btnLogin'), btnForgot = $('btnForgot'), loginCard = $('loginCard');
+  const btnSignOut = $('btnSignOut'), userArea = $('userArea');
   const appArea = $('appArea');
   const dateEl = $('date'), sourceEl = $('source'), phoneEl = $('phone'), incidentEl = $('incident'), procedureEl = $('procedure'), descriptionEl = $('description'), fileInput = $('fileInput');
-  const btnSubmit = $('btnSubmit'), btnClear = $('btnClear'), btnExportXlsx = $('btnExportXlsx'), btnExportPdf = $('btnExportPdf');
+  const btnSubmit = $('btnSubmit'), btnClear = $('btnClear');
   const recordsTableBody = document.querySelector('#recordsTable tbody');
   const searchInput = $('searchInput'), filterStatus = $('filterStatus'), filterPeriod = $('filterPeriod');
   const btnSummary = $('btnSummary'), summaryCard = $('summaryCard');
   const weekCount = $('weekCount'), monthCount = $('monthCount'), yearCount = $('yearCount');
-  const selectAll = $('selectAll'), btnDeleteSelected = $('btnDeleteSelected');
+  const btnExportXlsx = $('btnExportXlsx'), btnExportPdf = $('btnExportPdf'), selectAll = $('selectAll'), btnDeleteSelected = $('btnDeleteSelected');
 
+  // currentUser local (after built-in login)
   let currentUser = null;
 
-  // ---------- AUTH: login only (no signup) ----------
-  btnLogin.addEventListener('click', async ()=>{
-    const email = emailEl.value.trim(), pass = passEl.value;
-    if(!email || !pass) return alert('សូមបំពេញអ៊ីមែល និង លេខសម្ងាត់');
-    try{
-      await auth.signInWithEmailAndPassword(email, pass);
-    } catch(e){
-      alert('ចូលមិនបាន: ' + e.message);
+  // ---------- Built-in login ----------
+  btnLogin.addEventListener('click', ()=>{
+    const email = (emailEl.value || '').trim();
+    const pass = (passEl.value || '').trim();
+    if(!email || !pass){ alert('សូមបញ្ចូលអ៊ីមែល និង លេខសម្ងាត់'); return; }
+
+    if(email === BUILTIN_EMAIL && pass === BUILTIN_PASSWORD){
+      // set local logged-in flag and currentUser object
+      localStorage.setItem('hotline_logged_in', '1');
+      currentUser = { email: BUILTIN_EMAIL, uid: BUILTIN_UID, displayName: BUILTIN_EMAIL };
+      showAppAfterLogin();
+    } else {
+      alert('ចូលមិនបាន: អ៊ីមែល ឬ លេខសម្ងាត់មិនត្រឹមត្រូវទេ។');
     }
   });
 
-  btnForgot.addEventListener('click', async ()=>{
-    const email = prompt('បញ្ចូលអ៊ីមែលរបស់អ្នកសម្រាប់ Reset password:');
-    if(!email) return;
-    try{
-      await auth.sendPasswordResetEmail(email);
-      alert('ផ្ញើអ៊ីមែលសម្រាប់កំណត់ពាក្យសម្ងាត់ម្តងទៀត');
-    } catch(e){ alert('Failed: ' + e.message); }
+  // Forgot password: simple message (no reset since not using Firebase Auth)
+  btnForgot.addEventListener('click', ()=>{
+    alert('This is a local login. To change the password, edit the client config or contact the administrator.');
   });
 
-  btnSignOut.addEventListener('click', ()=> auth.signOut());
+  // Sign out
+  btnSignOut.addEventListener('click', ()=>{
+    localStorage.removeItem('hotline_logged_in');
+    currentUser = null;
+    loginCard.style.display = 'block';
+    appArea.style.display = 'none';
+    userArea.textContent = '';
+  });
 
-  // ---------- AUTH STATE ----------
-  auth.onAuthStateChanged(user=>{
-    currentUser = user;
-    if(user){
-      // show app
-      loginCard.style.display = 'none';
-      appArea.style.display = 'block';
-      $('userArea').textContent = `សូស្ដី, ${user.displayName || user.email}`;
-      loadRecords();
+  // Auto-check login on load
+  window.addEventListener('load', ()=>{
+    if(localStorage.getItem('hotline_logged_in') === '1'){
+      currentUser = { email: BUILTIN_EMAIL, uid: BUILTIN_UID, displayName: BUILTIN_EMAIL };
+      showAppAfterLogin();
     } else {
       loginCard.style.display = 'block';
       appArea.style.display = 'none';
-      $('userArea').textContent = '';
     }
   });
 
-  // ---------- SUBMIT REPORT ----------
-  $('btnSubmit').addEventListener('click', async ()=>{
+  function showAppAfterLogin(){
+    loginCard.style.display = 'none';
+    appArea.style.display = 'block';
+    userArea.textContent = `សួស្តី, ${currentUser.displayName}`;
+    loadRecords();
+  }
+
+  // ---------- Submit report (Firestore + Storage) ----------
+  btnSubmit.addEventListener('click', async ()=>{
     if(!currentUser) return alert('សូមចូលមុន');
     const date = dateEl.value;
-    if(!date) return alert('សូមបំពេញកាលបរិច្ឆេទ');
+    if(!date) return alert('សូមបញ្ចូលកាលបរិច្ឆេទ');
+    const id = 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2,8);
+
     const data = {
       date,
       source: sourceEl.value || '',
@@ -78,10 +94,8 @@
       uploadedBy: currentUser.displayName || currentUser.email || '',
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     };
-    // create doc id
-    const id = 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2,8);
 
-    // handle file upload if present (with metadata)
+    // file upload
     if(fileInput.files.length){
       const f = fileInput.files[0];
       const storagePath = `attachments/${id}/${f.name}`;
@@ -91,53 +105,62 @@
         const url = await snap.ref.getDownloadURL();
         data.fileUrl = url; data.fileName = f.name; data.storagePath = storagePath;
       } catch(e){
-        console.error('upload fail', e);
-        alert('Upload file failed: ' + e.message);
+        console.error('Upload failed', e);
+        alert('ទាញឯកសារមិនបាន: ' + e.message);
         return;
       }
     }
 
-    await db.collection('hotline117').doc(id).set(data);
-    alert('រក្សារួចរាល់');
-    clearForm();
-    loadRecords();
+    try{
+      await db.collection('hotline117').doc(id).set(data);
+      alert('បានរក្សារួច');
+      clearForm();
+      loadRecords();
+    } catch(err){
+      console.error(err);
+      alert('Failed to save: ' + err.message);
+    }
   });
 
-  $('btnClear').addEventListener('click', clearForm);
+  btnClear.addEventListener('click', clearForm);
   function clearForm(){
     ['date','source','phone','incident','procedure','description'].forEach(k => { const el = $(k); if(el) el.value = ''; });
     if(fileInput) fileInput.value = '';
   }
 
-  // ---------- LOAD / FILTER RECORDS ----------
+  // ---------- Load records ----------
   async function loadRecords(){
     recordsTableBody.innerHTML = '';
-    const snapshot = await db.collection('hotline117').orderBy('date','desc').get();
-    snapshot.forEach(doc=>{
-      const d = doc.data();
-      const tr = document.createElement('tr');
-      if(d.status === 'done') tr.classList.add('done');
-      tr.innerHTML = `
-        <td><input type="checkbox" class="sel" data-id="${doc.id}" /></td>
-        <td>${escapeHtml(d.date||'')}</td>
-        <td>${escapeHtml(d.source||'')}</td>
-        <td>${escapeHtml(d.phone||'')}</td>
-        <td>${shorten(escapeHtml(d.incident||''), 80)}</td>
-        <td>${escapeHtml(d.uploadedBy||'')}</td>
-        <td>${d.status||'open'}</td>
-        <td>
-          <button class="btn btn-sm btn-muted" data-id="${doc.id}" data-action="view">លម្អិត</button>
-          <button class="btn btn-sm btn-primary" data-id="${doc.id}" data-action="pdf">PDF</button>
-          <button class="btn btn-sm btn-muted" data-id="${doc.id}" data-action="download" ${!d.fileUrl ? 'disabled' : ''}>ទាញយក</button>
-          <button class="btn btn-sm btn-primary" data-id="${doc.id}" data-action="edit">កែ</button>
-          <button class="btn btn-sm btn-danger" data-id="${doc.id}" data-action="delete">លុប</button>
-        </td>
-      `;
-      recordsTableBody.appendChild(tr);
-    });
+    try{
+      const snapshot = await db.collection('hotline117').orderBy('date','desc').get();
+      snapshot.forEach(doc=>{
+        const d = doc.data();
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td><input type="checkbox" class="sel" data-id="${doc.id}" /></td>
+          <td>${escapeHtml(d.date||'')}</td>
+          <td>${escapeHtml(d.source||'')}</td>
+          <td>${escapeHtml(d.phone||'')}</td>
+          <td>${shorten(escapeHtml(d.incident||''), 80)}</td>
+          <td>${escapeHtml(d.uploadedBy||'')}</td>
+          <td>${d.status||'open'}</td>
+          <td>
+            <button class="btn btn-sm btn-muted" data-id="${doc.id}" data-action="view">លម្អិត</button>
+            <button class="btn btn-sm btn-primary" data-id="${doc.id}" data-action="pdf">PDF</button>
+            <button class="btn btn-sm btn-muted" data-id="${doc.id}" data-action="download" ${!d.fileUrl ? 'disabled' : ''}>ទាញយក</button>
+            <button class="btn btn-sm btn-primary" data-id="${doc.id}" data-action="edit">កែ</button>
+            <button class="btn btn-sm btn-danger" data-id="${doc.id}" data-action="delete">លុប</button>
+          </td>
+        `;
+        recordsTableBody.appendChild(tr);
+      });
+    } catch(e){
+      console.error('Load records fail', e);
+      recordsTableBody.innerHTML = '<tr><td colspan="8">មិនអាចផ្ទុកកំណត់ហេតុក៏បាន: ' + e.message + '</td></tr>';
+    }
   }
 
-  // ---------- TABLE ACTIONS ----------
+  // ---------- Table action delegation ----------
   document.querySelector('#recordsTable').addEventListener('click', async (e)=>{
     const btn = e.target.closest('button');
     if(!btn) return;
@@ -151,7 +174,7 @@
       await generatePdfForId(id);
     } else if(action === 'download'){
       const d = (await db.collection('hotline117').doc(id).get()).data();
-      if(d.fileUrl) window.open(d.fileUrl, '_blank');
+      if(d && d.fileUrl) window.open(d.fileUrl, '_blank');
     } else if(action === 'edit'){
       await startEdit(id);
     } else if(action === 'delete'){
@@ -160,18 +183,16 @@
     }
   });
 
-  // ---------- EDIT (client-side flow) ----------
+  // ---------- Edit ----------
   async function startEdit(id){
     const docRef = db.collection('hotline117').doc(id);
     const doc = await docRef.get();
     if(!doc.exists) return alert('Not found');
     const d = doc.data();
 
-    // permission check (client-side) — rules enforced server-side
-    const ok = await canModify(doc);
-    if(!ok) return alert('មិនអាចកែបាន (ការ​ពេលឬសិទ្ធិ)');
-
-    // populate form
+    // permission check (client-side)
+    if(!canModifyClient(d)) return alert('មិនអាចកែបាន (ក្រៅពេល 2 ថ្ងៃ ឬ សិទ្ធិ)');
+    // populate
     dateEl.value = d.date || '';
     sourceEl.value = d.source || '';
     phoneEl.value = d.phone || '';
@@ -191,50 +212,57 @@
     loadRecords();
   }
 
-  // ---------- DELETE ----------
+  function canModifyClient(docData){
+    if(!currentUser) return false;
+    if(currentUser.uid === OWNER_UID) return true;
+    if(docData.uid !== currentUser.uid) return false;
+    const createdAt = docData.createdAt ? (docData.createdAt.toDate ? docData.createdAt.toDate() : new Date(docData.createdAt)) : null;
+    if(!createdAt) return false;
+    return (Date.now() - createdAt.getTime()) <= 2*24*3600*1000;
+  }
+
+  // ---------- Delete ----------
   async function tryDelete(id){
     const docRef = db.collection('hotline117').doc(id);
     const doc = await docRef.get();
     if(!doc.exists) return alert('Not found');
-    const ok = await canModify(doc);
-    if(!ok) return alert('មិនអាចលុប (ក្រៅរយៈ 2 ថ្ងៃ និងមិនមែន OWNER)');
     const d = doc.data();
+    if(!canModifyClient(d)) return alert('មិនអាចលុប (ក្រៅពេល 2 ថ្ងៃ នោះមិនមែន OWNER)');
     if(d.storagePath){
-      try{ await storage.ref().child(d.storagePath).delete(); } catch(e){ console.warn('delete file fail', e); }
+      try{ await storage.ref().child(d.storagePath).delete(); } catch(e){ console.warn('Failed to delete storage', e); }
     }
     await docRef.delete();
     alert('បានលុប');
     loadRecords();
   }
 
-  // ---------- CAN MODIFY (client check) ----------
-  async function canModify(doc){
-    const d = doc.data();
-    const uid = currentUser.uid;
-    if(uid === OWNER_UID) return true;
-    if(uid !== d.uid) return false;
-    const createdAt = d.createdAt ? (d.createdAt.toDate ? d.createdAt.toDate() : new Date(d.createdAt)) : null;
-    if(!createdAt) return false;
-    return (Date.now() - createdAt.getTime()) <= 2*24*3600*1000;
-  }
-
-  // ---------- EXPORTS ----------
-  $('btnExportXlsx').addEventListener('click', async ()=>{
-    const snapshot = await db.collection('hotline117').orderBy('date','desc').get();
-    const rows = [['ID','Date','Source','Phone','Incident','Procedure','Description','Status','UploadedBy','FileName','FileUrl']];
-    snapshot.forEach(doc => {
-      const d = doc.data();
-      rows.push([doc.id, d.date, d.source, d.phone, d.incident, d.procedure, d.description, d.status, d.uploadedBy||'', d.fileName||'', d.fileUrl||'']);
-    });
-    const ws = XLSX.utils.aoa_to_sheet(rows);
-    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'hotline');
-    const wbout = XLSX.write(wb, {bookType:'xlsx', type:'array'});
-    const blob = new Blob([wbout], {type:'application/octet-stream'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = 'hotline117_records.xlsx'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  // ---------- Exports ----------
+  btnExportXlsx.addEventListener('click', async ()=>{
+    try{
+      const snapshot = await db.collection('hotline117').orderBy('date','desc').get();
+      const rows = [['ID','Date','Source','Phone','Incident','Procedure','Description','Status','UploadedBy','FileName','FileUrl']];
+      snapshot.forEach(doc => {
+        const d = doc.data();
+        rows.push([doc.id, d.date, d.source, d.phone, d.incident, d.procedure, d.description, d.status, d.uploadedBy||'', d.fileName||'', d.fileUrl||'']);
+      });
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'hotline');
+      const wbout = XLSX.write(wb, {bookType:'xlsx', type:'array'});
+      const blob = new Blob([wbout], {type:'application/octet-stream'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = 'hotline117_records.xlsx'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    } catch(e){
+      alert('Export failed: ' + e.message);
+    }
   });
 
-  // PDF generator (simple)
+  // export selected to PDF
+  btnExportPdf.addEventListener('click', async ()=>{
+    const ids = Array.from(document.querySelectorAll('.sel:checked')).map(cb => cb.dataset.id);
+    if(ids.length===0){ alert('មិនមានកំណត់ហេតុខ្ទង់ជ្រើស'); return; }
+    for(const id of ids) await generatePdfForId(id);
+  });
+
   async function generatePdfForId(id){
     const docSnap = await db.collection('hotline117').doc(id).get();
     if(!docSnap.exists) return;
@@ -260,7 +288,7 @@
     pdf.save('hotline_' + id + '.pdf');
   }
 
-  // ---------- SEARCH / FILTER ----------
+  // ---------- Search / filter ----------
   searchInput.addEventListener('input', debounce(applyFilters, 300));
   filterStatus.addEventListener('change', applyFilters);
   filterPeriod.addEventListener('change', applyFilters);
@@ -305,7 +333,7 @@
     });
   }
 
-  // ---------- SUMMARY ----------
+  // ---------- Summary ----------
   btnSummary.addEventListener('click', async ()=>{
     const snapshot = await db.collection('hotline117').get();
     const now = Date.now(); let w=0,m=0,y=0;
